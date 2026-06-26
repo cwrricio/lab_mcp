@@ -6,6 +6,9 @@
 *.key
 id_ed25519*
 id_rsa*
+
+# Demo SSH keys generated locally — never commit
+docker/keys/*
 !docker/keys/.gitkeep
 
 # Python

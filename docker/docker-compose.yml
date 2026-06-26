@@ -1,0 +1,28 @@
+# Demo lab: three Alpine containers simulating lab hosts, reachable on localhost.
+# Usage:
+#   ./setup-keys.sh        # one-time: generate the demo SSH key
+#   docker compose up -d   # start raspi01 (2400), raspi02 (2401), proxy109 (2402)
+services:
+  raspi01:
+    build: .
+    container_name: sentinel-raspi01
+    ports:
+      - "2400:22"
+    volumes:
+      - ./keys/sentinel_demo.pub:/authorized_key.pub:ro
+
+  raspi02:
+    build: .
+    container_name: sentinel-raspi02
+    ports:
+      - "2401:22"
+    volumes:
+      - ./keys/sentinel_demo.pub:/authorized_key.pub:ro
+
+  proxy109:
+    build: .
+    container_name: sentinel-proxy109
+    ports:
+      - "2402:22"
+    volumes:
+      - ./keys/sentinel_demo.pub:/authorized_key.pub:ro

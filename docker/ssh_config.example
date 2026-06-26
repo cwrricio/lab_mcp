@@ -1,0 +1,29 @@
+# Append these blocks to your ~/.ssh/config to use the Docker demo lab.
+# Adjust IdentityFile to the absolute path of docker/keys/sentinel_demo.
+
+Host raspi01-demo
+    HostName localhost
+    User pi
+    Port 2400
+    IdentityFile ~/Documents/lab_mcp/docker/keys/sentinel_demo
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
+    ServerAliveInterval 60
+
+Host raspi02-demo
+    HostName localhost
+    User pi
+    Port 2401
+    IdentityFile ~/Documents/lab_mcp/docker/keys/sentinel_demo
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
+    ServerAliveInterval 60
+
+Host proxy109-demo
+    HostName localhost
+    User pi
+    Port 2402
+    IdentityFile ~/Documents/lab_mcp/docker/keys/sentinel_demo
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
+    ServerAliveInterval 60

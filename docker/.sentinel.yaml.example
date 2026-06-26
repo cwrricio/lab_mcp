@@ -1,0 +1,6 @@
+# Demo grouping for the Docker lab. Copy to the project root as `.sentinel.yaml`.
+groups:
+  laboratorio-demo:
+    - raspi01-demo
+    - raspi02-demo
+    - proxy109-demo
