@@ -1,0 +1,24 @@
+# Optional grouping file for MCP Lab Sentinel.
+#
+# Without this file, the server reads every `Host` entry from ~/.ssh/config and
+# auto-groups them by the `<device>-<env>` naming convention (e.g. `raspi01-proxy`
+# belongs to the auto-group `proxy`).
+#
+# Use this file to define explicit, custom groups. Each group lists SSH aliases
+# exactly as they appear in ~/.ssh/config. A host may belong to several groups.
+
+groups:
+  laboratorio-109:
+    - raspi01-proxy
+    - raspi02-proxy
+    - proxy109
+
+  laboratorio-209:
+    - raspi01-proxy209
+    - raspi02-proxy209
+    - pc209
+
+  # Example custom group mixing real hosts and a local VM.
+  minha-bancada:
+    - raspi01-proxy
+    - pc209

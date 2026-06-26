@@ -1,0 +1,37 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_ed25519*
+id_rsa*
+!docker/keys/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# UV / virtualenv
+.venv/
+venv/
+uv.lock
+
+# Local sentinel config (may reference real hosts)
+.sentinel.yaml
+!.sentinel.yaml.example
+
+# User's real SSH config placed in the repo root as reference (contains real IPs/users)
+/config
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
