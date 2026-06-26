@@ -1,4 +1,4 @@
-# Lab Sentinel Report — laboratorio-demo
+# Lab -your-key-hereSent-your-key-hereinel Report — laboratorio-demo
 
 _Generated at 2026-06-26 23:38:24 UTC._
 

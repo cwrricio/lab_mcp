@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛰️ MCP Lab Sentinel
+# MCP Lab Sentinel
 
 **A read-only MCP server that lets an AI assistant diagnose your lab infrastructure —
 Raspberry Pi boards, Linux PCs, and any SSH-reachable host.**
@@ -14,7 +14,7 @@ Raspberry Pi boards, Linux PCs, and any SSH-reachable host.**
 
 ---
 
-## 📖 Table of Contents
+## Table of Contents
 
 1. [The Problem](#-the-problem)
 2. [The Solution](#-the-solution)
@@ -37,7 +37,7 @@ Raspberry Pi boards, Linux PCs, and any SSH-reachable host.**
 
 ---
 
-## 🎯 The Problem
+## The Problem
 
 In academic labs, IoT classrooms, and research rooms with many Raspberry Pi boards and
 Linux PCs, you waste time manually checking, over and over:
@@ -51,7 +51,7 @@ Linux PCs, you waste time manually checking, over and over:
 
 This doesn't scale beyond a handful of machines.
 
-## 💡 The Solution
+## The Solution
 
 **MCP Lab Sentinel** is a local [MCP](https://modelcontextprotocol.io) server exposing
 **safe, read-only diagnostic tools** to any AI client. Ask in natural language —
@@ -69,7 +69,7 @@ The MCP server demonstrates **all three protocol primitives**:
 | 📄 **Resources** | Readable data | `sentinel://hosts`, `sentinel://config` |
 | 💬 **Prompts** | Reusable templates | `analise_lab`, `status_geral`, `checklist_aula` |
 
-## 🏗️ Architecture
+##  Architecture
 
 Hexagonal (ports & adapters) — the core logic never depends on I/O, so it is fully
 testable and portable across environments.
@@ -97,14 +97,14 @@ testable and portable across environments.
 See [`docs/PRD.md`](docs/PRD.md) and [`docs/adr/`](docs/adr/) for the full product and
 architecture decision records.
 
-## 📦 Prerequisites
+## Prerequisites
 
 - **Python 3.11+**
 - **[uv](https://github.com/astral-ch/uv)** — `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **Docker + Docker Compose** *(only for the demo environment)*
 - An **OpenAI API key** *(only for the CLI client; the server itself needs none)*
 
-## 🚀 Installation
+## Installation
 
 ```bash
 git clone https://github.com/cwrricio/lab_mcp.git
@@ -113,7 +113,7 @@ uv sync          # creates the venv and installs everything
 uv run pytest    # 64 tests should pass
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 The sentinel needs **zero configuration** beyond your existing SSH config. Three optional
 files tune its behavior:
@@ -150,10 +150,10 @@ cp .env.example .env
 #   OPENAI_MODEL=gpt-4o
 ```
 
-> 🔒 The key is read **exclusively from `.env`** (never from the shell), and `.env` is
+> The key is read **exclusively from `.env`** (never from the shell), and `.env` is
 > git-ignored. It is never logged or returned by any tool.
 
-## ▶️ Running the MCP Server
+## Running the MCP Server
 
 The server speaks MCP over **stdio**. Run it directly:
 
@@ -175,7 +175,7 @@ Or register it in **Claude Desktop** (`claude_desktop_config.json`):
 }
 ```
 
-## 🤖 Running the CLI Client
+## Running the CLI Client
 
 A terminal client that uses OpenAI GPT-4o to orchestrate the tools:
 
@@ -189,7 +189,7 @@ prints a Markdown answer.
 
 ---
 
-## 🔌 Environment 1 — Real Hardware (Raspberry Pi)
+## Environment 1 — Real Hardware (Raspberry Pi)
 
 If you already SSH into your boards, you're done. A typical `~/.ssh/config` with a jump
 host:
@@ -214,7 +214,7 @@ cp .sentinel.yaml.example .sentinel.yaml   # group your real hosts
 uv run lab-sentinel-mcp                     # or use the CLI client
 ```
 
-## 🖥️ Environment 2 — Virtual Machines
+## Environment 2 — Virtual Machines
 
 Works identically for VMs (VirtualBox, KVM, cloud). Just add SSH entries pointing at the
 VM IP/port:
@@ -235,7 +235,7 @@ Host vm-debian
 Group them in `.sentinel.yaml` and run the server. No code changes — same path as real
 hardware.
 
-## 🐳 Environment 3 — Docker Demo (no hardware needed)
+## Environment 3 — Docker Demo (no hardware needed)
 
 Spin up a complete simulated lab in three commands:
 
@@ -295,7 +295,7 @@ cd docker && docker compose down
 
 ---
 
-## 🔧 Available Tools
+## Available Tools
 
 | Tool | Input | Description |
 |------|-------|-------------|
@@ -308,7 +308,7 @@ cd docker && docker compose down
 | `check_ssh_config` | — | Audit `~/.ssh/config` for common issues |
 | `suggest_fix` | `name` | Safe, read-only remediation tips |
 
-## 📄 Resources & Prompts
+## Resources & Prompts
 
 **Resources** (readable context):
 - `sentinel://hosts` — sanitized host inventory
@@ -319,7 +319,7 @@ cd docker && docker compose down
 - `status_geral()` — quick online/SSH status of all hosts
 - `checklist_aula(group)` — pre-class readiness checklist
 
-## 💬 Example Questions
+## Example Questions
 
 ```text
 Analise o laboratório 109 e diga quais máquinas estão online, qual SO usam
@@ -332,7 +332,7 @@ O meu ~/.ssh/config tem inconsistências?
 Faça um checklist do laboratorio-demo antes da aula.
 ```
 
-## ✅ Test Cases
+## Test Cases
 
 Run the suite with `uv run pytest` (64 tests). Key cases, in plain language:
 
@@ -354,7 +354,7 @@ Run the suite with `uv run pytest` (64 tests). Key cases, in plain language:
 | **TC-014** | **No key leakage** | `list_hosts` output never contains `identity_file` or key paths |
 | **TC-015** | **Key only from `.env`** | A key in the shell env is ignored; missing `.env` key → `MissingKeyError` |
 
-## 🔒 Security Policy
+## Security Policy
 
 This project is **secure by default** (see [ADR-004](docs/adr/ADR-004-security-boundaries.md)):
 
@@ -366,14 +366,14 @@ This project is **secure by default** (see [ADR-004](docs/adr/ADR-004-security-b
 - ✅ **Never** runs `rm`, `reboot`, `shutdown`, `sudo`, `dd`, `mkfs`, `systemctl stop/restart`, …
 - ✅ **Never** modifies `~/.ssh/config`
 
-## ⚠️ Limitations
+## Limitations
 
 - Depends on connectivity to the hosts.
 - SSH access must be pre-configured (keys in place).
 - The server never fixes problems automatically — it only diagnoses and suggests.
 - Not intended for unauthorized network scanning. Defensive/academic use only.
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] **Phase 1 — MVP**: inventory, ping, SSH, OS info, report
 - [x] **Phase 2 — Advanced diagnostics**: resources, SSH-config audit, alerts
