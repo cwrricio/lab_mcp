@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from . import parsers
 from .ports import InventoryPort, PingPort, SSHClientPort
-from .results import OSInfo, PingResult, ResourceStatus, SSHCheckResult
+from .report import build_report
+from .results import HostDiagnostic, OSInfo, PingResult, ResourceStatus, SSHCheckResult
 
 
 class DiagnosticsService:
@@ -52,6 +53,24 @@ class DiagnosticsService:
             # Host unreachable: return an empty status rather than raising.
             return ResourceStatus(ssh_active=False)
         return parsers.build_resource_status(df, free, uptime, ssh_active)
+
+    def diagnose_host(self, name: str) -> HostDiagnostic:
+        """Run the full diagnostic pipeline for a single host."""
+        ping = self.ping_host(name)
+        diag = HostDiagnostic(name=name, online=ping.online)
+        if not ping.online:
+            return diag
+        diag.ssh_ok = self.check_ssh(name).ssh_ok
+        if diag.ssh_ok:
+            diag.os = self.get_os_info(name)
+            diag.resources = self.get_resource_status(name)
+        return diag
+
+    def generate_report(self, group: str | None = None) -> str:
+        """Diagnose every host (optionally filtered by group) and render Markdown."""
+        hosts = self._inventory.list_hosts(group=group)
+        diagnostics = [self.diagnose_host(h.name) for h in hosts]
+        return build_report(diagnostics, group=group)
 
     def _safe_run(self, host, command: str) -> str:
         """Run a command, returning empty string on any connectivity failure."""
