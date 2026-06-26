@@ -23,6 +23,10 @@ class DiagnosticsService:
         self._ping = ping
         self._ssh = ssh
 
+    def list_hosts(self, group: str | None = None):
+        """Public passthrough to the inventory allowlist."""
+        return self._inventory.list_hosts(group=group)
+
     def ping_host(self, name: str) -> PingResult:
         host = self._inventory.get_host(name)  # raises HostNotFoundError
         return self._ping.ping(host)
