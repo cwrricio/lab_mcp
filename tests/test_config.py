@@ -1,0 +1,126 @@
+"""Tests for the SSH-config-backed inventory adapter."""
+
+import textwrap
+
+import pytest
+
+from lab_sentinel.config import SSHConfigInventoryAdapter
+from lab_sentinel.errors import HostNotFoundError
+
+SSH_CONFIG = textwrap.dedent(
+    """
+    Host proxy109
+        HostName 200.132.136.134
+        User emanuel
+        Port 22
+        IdentityFile ~/.ssh/id_ed25519_209
+
+    Host raspi01-proxy
+        HostName localhost
+        User emanuel
+        Port 2400
+        ProxyJump proxy109
+
+    Host raspi02-proxy
+        HostName localhost
+        User emanuel
+        Port 2401
+        ProxyJump proxy109
+
+    Host pc209 proxy209
+        HostName 200.132.136.139
+        User emanuel
+        Port 22
+        IdentityFile ~/.ssh/id_ed25519_209
+    """
+)
+
+GROUPS_YAML = textwrap.dedent(
+    """
+    groups:
+      laboratorio-109:
+        - raspi01-proxy
+        - raspi02-proxy
+        - proxy109
+    """
+)
+
+
+@pytest.fixture
+def ssh_config_file(tmp_path):
+    path = tmp_path / "ssh_config"
+    path.write_text(SSH_CONFIG)
+    return path
+
+
+def test_parses_basic_host_entry(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    host = inv.get_host("proxy109")
+    assert host.host == "200.132.136.134"
+    assert host.user == "emanuel"
+    assert host.port == 22
+    assert host.identity_file is not None
+
+
+def test_parses_proxy_jump_host(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    host = inv.get_host("raspi01-proxy")
+    assert host.host == "localhost"
+    assert host.port == 2400
+    assert host.proxy_jump == "proxy109"
+
+
+def test_multiple_aliases_in_one_block_are_both_registered(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    assert inv.get_host("pc209").host == "200.132.136.139"
+    assert inv.get_host("proxy209").host == "200.132.136.139"
+
+
+def test_unknown_host_raises_error(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    with pytest.raises(HostNotFoundError):
+        inv.get_host("does-not-exist")
+
+
+def test_list_hosts_returns_all(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    names = {h.name for h in inv.list_hosts()}
+    assert {"proxy109", "raspi01-proxy", "raspi02-proxy", "pc209", "proxy209"} <= names
+
+
+def test_loads_sentinel_yaml_groups(ssh_config_file, tmp_path):
+    groups_file = tmp_path / ".sentinel.yaml"
+    groups_file.write_text(GROUPS_YAML)
+    inv = SSHConfigInventoryAdapter(ssh_config_file, groups_file=groups_file)
+    hosts = inv.list_hosts(group="laboratorio-109")
+    names = {h.name for h in hosts}
+    assert names == {"raspi01-proxy", "raspi02-proxy", "proxy109"}
+
+
+def test_explicit_group_tags_are_attached(ssh_config_file, tmp_path):
+    groups_file = tmp_path / ".sentinel.yaml"
+    groups_file.write_text(GROUPS_YAML)
+    inv = SSHConfigInventoryAdapter(ssh_config_file, groups_file=groups_file)
+    assert "laboratorio-109" in inv.get_host("proxy109").tags
+
+
+def test_auto_groups_by_naming_convention(ssh_config_file):
+    # No groups file -> auto-group by the `<device>-<env>` suffix.
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    hosts = inv.list_hosts(group="proxy")
+    names = {h.name for h in hosts}
+    assert {"raspi01-proxy", "raspi02-proxy"} <= names
+
+
+def test_missing_sentinel_yaml_does_not_raise(ssh_config_file, tmp_path):
+    inv = SSHConfigInventoryAdapter(
+        ssh_config_file, groups_file=tmp_path / "nope.yaml"
+    )
+    assert inv.list_hosts()  # still works from SSH config alone
+
+
+def test_identity_file_not_in_public_view(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    public = inv.get_host("proxy109").public_view()
+    assert "identity_file" not in public
+    assert "id_ed25519" not in str(public)
