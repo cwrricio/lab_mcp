@@ -1,6 +1,6 @@
 """Plain result objects returned by diagnostics (transport-agnostic)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,25 @@ class ResourceStatus:
     ssh_active: bool | None = None
 
 
+@dataclass(frozen=True)
+class NetworkInterface:
+    name: str
+    ipv4: list[str] = field(default_factory=list)
+    ipv6: list[str] = field(default_factory=list)
+    mac: str | None = None
+    state: str | None = None
+
+
+@dataclass(frozen=True)
+class NetworkInfo:
+    hostname: str | None = None
+    interfaces: list[NetworkInterface] = field(default_factory=list)
+    default_gateway: str | None = None
+    routes: list[str] = field(default_factory=list)
+    listening_services: list[str] = field(default_factory=list)
+    arp_neighbors: list[str] = field(default_factory=list)
+
+
 @dataclass
 class HostDiagnostic:
     """Full diagnostic snapshot for one host, used to build reports."""
@@ -40,3 +59,4 @@ class HostDiagnostic:
     ssh_ok: bool = False
     os: OSInfo | None = None
     resources: ResourceStatus | None = None
+    network: NetworkInfo | None = None

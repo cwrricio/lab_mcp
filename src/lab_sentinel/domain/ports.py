@@ -6,13 +6,13 @@ keeps business logic testable with fakes and lets backends be swapped freely.
 
 from typing import Protocol
 
-from .models import LabHost
+from lab_sentinel.domain.models import LabHost
 
 
 class InventoryPort(Protocol):
     """Source of the host allowlist."""
 
-    def list_hosts(self, group: str | None = None) -> list[LabHost]: ...
+    def list_hosts(self, group: str | None = None, name_filter: str | None = None) -> list[LabHost]: ...
 
     def get_host(self, name: str) -> LabHost:
         """Return the host or raise ``HostNotFoundError``."""

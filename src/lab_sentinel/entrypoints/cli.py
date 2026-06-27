@@ -138,7 +138,7 @@ async def _run_query(
 
     client = OpenAI(api_key=config.api_key)
     server_params = StdioServerParameters(
-        command=sys.executable, args=["-m", "lab_sentinel.server"], env=os.environ.copy()
+        command=sys.executable, args=["-m", "lab_sentinel.entrypoints.server"], env=os.environ.copy()
     )
 
     def emit(message: str) -> None:

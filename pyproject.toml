@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.scripts]
-lab-sentinel-mcp = "lab_sentinel.server:main"
-lab-sentinel = "lab_sentinel.cli:main"
+lab-sentinel-mcp = "lab_sentinel.entrypoints.server:main"
+lab-sentinel = "lab_sentinel.entrypoints.cli:main"
 
 [dependency-groups]
 dev = [

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 
-from .config import DEFAULT_GROUPS_FILE, DEFAULT_SSH_CONFIG, SSHConfigInventoryAdapter
-from .connectivity import ParamikoSSHAdapter, SubprocessPingAdapter
-from .diagnostics import DiagnosticsService
+from lab_sentinel.adapters.config import DEFAULT_GROUPS_FILE, DEFAULT_SSH_CONFIG, SSHConfigInventoryAdapter
+from lab_sentinel.adapters.connectivity import ParamikoSSHAdapter, SubprocessPingAdapter
+from lab_sentinel.core.diagnostics import DiagnosticsService
 
 
 def build_service() -> DiagnosticsService:

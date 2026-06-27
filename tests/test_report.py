@@ -2,9 +2,9 @@
 
 import textwrap
 
-from lab_sentinel.report import build_report, suggest_fix
-from lab_sentinel.ssh_audit import audit_ssh_config
-from lab_sentinel.results import HostDiagnostic, OSInfo, ResourceStatus
+from lab_sentinel.core.report import build_report, suggest_fix
+from lab_sentinel.adapters.ssh_audit import audit_ssh_config
+from lab_sentinel.domain.results import HostDiagnostic, OSInfo, ResourceStatus
 
 DISK_ALERT = 90
 MEM_OK = 40

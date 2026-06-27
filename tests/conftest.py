@@ -2,20 +2,23 @@
 
 import pytest
 
-from lab_sentinel.errors import HostNotFoundError, SecurityError
-from lab_sentinel.models import LabHost
-from lab_sentinel.results import PingResult
+from lab_sentinel.domain.errors import HostNotFoundError, SecurityError
+from lab_sentinel.domain.models import LabHost
+from lab_sentinel.domain.results import PingResult
 
 
 class FakeInventory:
     def __init__(self, hosts: list[LabHost]) -> None:
         self._hosts = {h.name: h for h in hosts}
 
-    def list_hosts(self, group=None):
+    def list_hosts(self, group=None, name_filter=None):
         hosts = list(self._hosts.values())
-        if group is None:
-            return hosts
-        return [h for h in hosts if group in h.tags]
+        if group is not None:
+            hosts = [h for h in hosts if group in h.tags]
+        if name_filter is not None:
+            needle = name_filter.lower()
+            hosts = [h for h in hosts if needle in h.name.lower()]
+        return hosts
 
     def get_host(self, name):
         try:
@@ -35,8 +38,12 @@ class FakePing:
 class FakeSSH:
     """Configurable SSH double. ``outputs`` maps a command substring to stdout."""
 
-    ALLOWED = {"cat /etc/os-release", "uname", "df -h /", "free -m", "uptime",
-               "systemctl is-active ssh", "hostnamectl"}
+    ALLOWED = {
+        "cat /etc/os-release", "uname", "df -h /", "free -m", "uptime",
+        "systemctl is-active ssh", "hostnamectl",
+        "hostname -I", "ip addr show", "ip route show", "ip -6 addr show",
+        "ss -tlnp", "cat /proc/net/arp", "iw dev",
+    }
 
     def __init__(self, connect_ok=True, outputs=None) -> None:
         self._connect_ok = connect_ok

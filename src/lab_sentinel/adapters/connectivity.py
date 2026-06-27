@@ -7,9 +7,9 @@ import subprocess
 
 import paramiko
 
-from .errors import SecurityError
-from .models import LabHost
-from .results import PingResult
+from lab_sentinel.domain.errors import SecurityError
+from lab_sentinel.domain.models import LabHost
+from lab_sentinel.domain.results import PingResult
 
 PING_TIMEOUT_S = 2
 SSH_TIMEOUT_S = 5
@@ -18,13 +18,23 @@ SSH_TIMEOUT_S = 5
 # raises SecurityError. Kept here as the single source of truth (see ADR-004).
 ALLOWED_COMMANDS: frozenset[str] = frozenset(
     {
+        # OS identification
         "cat /etc/os-release",
         "uname -a",
         "hostnamectl",
+        # Resource status
         "df -h /",
         "free -m",
         "uptime",
         "systemctl is-active ssh",
+        # Network info
+        "hostname -I",
+        "ip addr show",
+        "ip route show",
+        "ip -6 addr show",
+        "ss -tlnp",
+        "cat /proc/net/arp",
+        "iw dev",
     }
 )
 

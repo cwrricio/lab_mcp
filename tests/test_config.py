@@ -4,8 +4,8 @@ import textwrap
 
 import pytest
 
-from lab_sentinel.config import SSHConfigInventoryAdapter
-from lab_sentinel.errors import HostNotFoundError
+from lab_sentinel.adapters.config import SSHConfigInventoryAdapter
+from lab_sentinel.domain.errors import HostNotFoundError
 
 SSH_CONFIG = textwrap.dedent(
     """
@@ -129,3 +129,28 @@ def test_identity_file_not_in_public_view(ssh_config_file):
     public = inv.get_host("proxy109").public_view()
     assert "identity_file" not in public
     assert "id_ed25519" not in str(public)
+
+
+def test_name_filter_returns_matching_hosts(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    result = inv.list_hosts(name_filter="raspi")
+    names = {h.name for h in result}
+    assert "raspi01-proxy" in names
+    assert "raspi02-proxy" in names
+    assert "proxy109" not in names
+
+
+def test_name_filter_is_case_insensitive(ssh_config_file):
+    inv = SSHConfigInventoryAdapter(ssh_config_file)
+    assert inv.list_hosts(name_filter="RASPI") == inv.list_hosts(name_filter="raspi")
+
+
+def test_name_filter_and_group_combine(ssh_config_file, tmp_path):
+    groups_file = tmp_path / ".sentinel.yaml"
+    groups_file.write_text(
+        "groups:\n  laboratorio-109:\n    - raspi01-proxy\n    - raspi02-proxy\n    - proxy109\n"
+    )
+    inv = SSHConfigInventoryAdapter(ssh_config_file, groups_file=groups_file)
+    result = inv.list_hosts(group="laboratorio-109", name_filter="raspi")
+    names = {h.name for h in result}
+    assert names == {"raspi01-proxy", "raspi02-proxy"}

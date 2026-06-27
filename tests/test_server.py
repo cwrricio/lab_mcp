@@ -2,9 +2,9 @@
 
 import asyncio
 
-from lab_sentinel.diagnostics import DiagnosticsService
-from lab_sentinel.models import LabHost
-from lab_sentinel.server import build_server
+from lab_sentinel.core.diagnostics import DiagnosticsService
+from lab_sentinel.domain.models import LabHost
+from lab_sentinel.entrypoints.server import build_server
 from tests.conftest import FakeInventory, FakePing, FakeSSH
 
 

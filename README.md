@@ -1,288 +1,369 @@
+<div align="center">
+
 # MCP Lab Sentinel
 
-A read-only MCP server that lets an AI assistant diagnose your lab infrastructure:
-Raspberry Pi boards, Linux PCs, VMs, and any SSH-reachable host.
-
-Ask in plain language — *"which machines are online and what OS do they run?"* — and the
-assistant calls real, safe tools over SSH to answer with real data.
+**A read-only MCP server that lets an AI assistant diagnose your lab infrastructure —
+Linux PCs, VMs, and any SSH-reachable host.**
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org)
 [![Protocol](https://img.shields.io/badge/MCP-Tools%20%7C%20Resources%20%7C%20Prompts-7c3aed.svg)](https://modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/tests-64%20passing-brightgreen.svg)](#minimal-tests)
+[![Tests](https://img.shields.io/badge/tests-64%20passing-brightgreen.svg)](#-test-cases)
+[![Security](https://img.shields.io/badge/policy-read--only-success.svg)](#-security-policy)
+
+</div>
 
 ---
 
-## Contents
+## Table of Contents
 
-- [What it does](#what-it-does)
-- [How it works](#how-it-works)
-- [Quick start](#quick-start)
-- [Configuration](#configuration)
-- [Using it](#using-it)
-- [Scenarios](#scenarios)
-- [Use cases](#use-cases)
-- [Tools, Resources and Prompts](#tools-resources-and-prompts)
-- [Minimal tests](#minimal-tests)
-- [Security](#security)
-- [Limitations and roadmap](#limitations-and-roadmap)
+1. [The Problem](#-the-problem)
+2. [The Solution](#-the-solution)
+3. [Architecture](#-architecture)
+4. [Prerequisites](#-prerequisites)
+5. [Installation](#-installation)
+6. [Shell Aliases](#-shell-aliases)
+7. [Configuration](#-configuration)
+8. [Running the MCP Server](#-running-the-mcp-server)
+9. [Running the CLI Client](#-running-the-cli-client)
+10. [Docker Demo](#-docker-demo-no-hardware-needed)
+11. [Available Tools](#-available-tools)
+12. [Resources & Prompts](#-resources--prompts)
+13. [Example Questions](#-example-questions)
+14. [Test Cases](#-test-cases)
+15. [Security Policy](#-security-policy)
+16. [Limitations](#-limitations)
+17. [Roadmap](#-roadmap)
 
-## What it does
+---
 
-In labs with many Raspberry Pi boards and Linux PCs, you constantly check the same things
-by hand: are they on, which alias to use, what OS, is SSH up, is the disk full, is the lab
-ready for class. This does not scale.
+## The Problem
 
-Lab Sentinel exposes those checks as **safe, read-only tools** an AI can call. It reads
-your existing `~/.ssh/config` as the host inventory — no separate inventory file, no
-duplication. Everything it does is read-only.
+In academic labs, IoT classrooms, and research rooms with many Linux PCs and
+SSH-reachable hosts, you waste time manually checking, over and over:
 
-## How it works
+- Are the devices powered on and reachable?
+- Which SSH alias or IP do I use for each one?
+- What OS / kernel is installed?
+- Is SSH actually working?
+- Is any disk almost full or memory exhausted?
+- Is the lab ready for a class, experiment, or demo?
 
+This doesn't scale beyond a handful of machines.
+
+## The Solution
+
+**MCP Lab Sentinel** is a local [MCP](https://modelcontextprotocol.io) server exposing
+**safe, read-only diagnostic tools** to any AI client. Ask in natural language —
+*"Analyze lab 109 and tell me which machines need attention"* — and the model calls real
+tools to answer with real data.
+
+It is **environment-agnostic**: it reads your existing `~/.ssh/config` as the host
+inventory, so it works the same on physical hardware, VMs, or Docker containers.
+
+The MCP server demonstrates **all three protocol primitives**:
+
+| Primitive | What it is | In this project |
+|-----------|-----------|-----------------|
+| **Tools** | Functions the AI calls | `ping_host`, `check_ssh`, `get_os_info`, `generate_report`… |
+| **Resources** | Readable data | `sentinel://hosts`, `sentinel://config` |
+| **Prompts** | Reusable templates | `analise_lab`, `status_geral`, `checklist_aula` |
+
+## Architecture
+
+Hexagonal (ports & adapters) — the core logic never depends on I/O, so it is fully
+testable and portable across environments.
+
+```text
+┌──────────────────┐      ┌──────────────────────────────────────────┐
+│   AI Client      │      │            lab-sentinel-mcp               │
+│ (CLI w/ OpenAI)  │ MCP  │                                           │
+│                  │◄────►│  server.py  (Tools / Resources / Prompts) │
+└──────────────────┘ stdio│       │                                   │
+                          │       ▼                                   │
+                          │  DiagnosticsService  (pure core)          │
+                          │       │         ▲                         │
+                          │  ports│         │ results                 │
+                          │       ▼         │                         │
+                          │  ┌───────────┬──────────┬──────────────┐  │
+                          │  │ Inventory │  Ping    │ SSH (paramiko)│  │
+                          │  │ (ssh cfg) │(subproc) │  whitelist    │  │
+                          │  └───────────┴──────────┴──────────────┘  │
+                          └───────────────────────────────────────────┘
+                                               ▼
+                                  Linux PC · VM · Docker container
 ```
-You (terminal)
-     │  natural language
-     ▼
-lab-sentinel  (CLI client, OpenAI)
-     │  MCP over stdio
-     ▼
-lab-sentinel-mcp  (the MCP server — the real product)
-     │  ping + SSH (read-only, whitelisted commands)
-     ▼
-Raspberry Pi · Linux PC · VM · Docker
-```
 
-The **server** is the deliverable. The CLI is one way to consume it; any MCP client could
-use the same server unchanged. Architecture is hexagonal (ports and adapters), so the core
-logic is fully testable without touching a real machine. See
-[`docs/PRD.md`](docs/PRD.md) and [`docs/adr/`](docs/adr/).
+## Prerequisites
 
-## Quick start
+- **Python 3.11+**
+- **[uv](https://github.com/astral-sh/uv)** — `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **Docker + Docker Compose** *(only for the demo environment)*
+- An **OpenAI API key** *(only for the CLI client; the MCP server itself needs none)*
+
+## Installation
 
 ```bash
-# 1. Install uv (https://github.com/astral-sh/uv)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 2. Install the project
 git clone https://github.com/cwrricio/lab_mcp.git
 cd lab_mcp
-uv sync
-
-# 3. Add your OpenAI key (only the CLI needs it; the server does not)
-cp .env.example .env        # then edit: OPENAI_API_KEY=sk-...
-
-# 4. Run
-uv run lab-sentinel
+uv sync          # creates the venv and installs everything
+uv run pytest    # 64 tests should pass
 ```
 
-That is enough if you already SSH into your machines. **No other configuration is
-required** — groups are optional (see below).
+## Shell Aliases
+
+Add these to your `~/.bashrc` or `~/.zshrc` so you don't have to type `uv run ...` every time:
+
+```bash
+# MCP Lab Sentinel aliases
+alias sentinel="uv run --project /path/to/lab_mcp lab-sentinel"
+alias sentinel-mcp="uv run --project /path/to/lab_mcp lab-sentinel-mcp"
+```
+
+Replace `/path/to/lab_mcp` with the absolute path where you cloned the repo, then reload:
+
+```bash
+source ~/.bashrc   # or source ~/.zshrc
+```
+
+Now you can use:
+
+```bash
+sentinel          # opens the interactive chat client
+sentinel-mcp      # starts the MCP server (stdio mode, for MCP clients)
+```
 
 ## Configuration
 
-Three files, all optional except the SSH config you already have.
+The sentinel needs **zero configuration** beyond your existing SSH config. Two optional
+files tune its behavior:
 
-| File | Required? | Purpose |
-|------|-----------|---------|
-| `~/.ssh/config` | Yes (already exists) | The host inventory. Every `Host` entry is diagnosable. |
-| `.env` | Only for the CLI | Holds `OPENAI_API_KEY`. Read only from this file, never the shell. Git-ignored. |
-| `.sentinel.yaml` | **No** | Optional named groups (e.g. `laboratorio-109`). |
+### 1. Host inventory — `~/.ssh/config` (required, already exists)
 
-### Groups are optional
+Every `Host` entry in your SSH config becomes a diagnosable host. No duplication, no extra
+inventory file needed.
 
-Without `.sentinel.yaml`, the system works fully: it reads every host from
-`~/.ssh/config`, and hosts named `device-suffix` are auto-grouped by their suffix
-(`raspi01-proxy` joins the auto-group `proxy`).
+Example entries:
 
-Add `.sentinel.yaml` only if you want your own named groups:
+```sshconfig
+Host raspi01-demo
+    HostName localhost
+    User demo
+    Port 2400
+    IdentityFile ~/.ssh/id_ed25519_sentinel_demo
+
+Host pc-lab109
+    HostName 192.168.1.10
+    User student
+    IdentityFile ~/.ssh/id_ed25519
+```
+
+### 2. Groups — `.sentinel.yaml` (optional)
+
+Groups let you target a subset of hosts at once — for example, all machines in a given lab
+room. Copy the template:
+
+```bash
+cp .sentinel.yaml.example .sentinel.yaml
+```
 
 ```yaml
 groups:
   laboratorio-109:
-    - raspi01-proxy
-    - raspi02-proxy
+    - raspi01-demo
+    - pc-lab109
+  laboratorio-demo:
+    - raspi01-demo
+    - raspi02-demo
     - proxy109
 ```
 
-A host may appear in several groups. You can create any group name you like.
+**How groups work:**
 
-## Using it
+- A host can belong to multiple groups.
+- When you call `list_hosts(group="laboratorio-109")` or ask *"analyze laboratorio-109"*,
+  only hosts in that group are returned and diagnosed.
+- If no `.sentinel.yaml` exists, an **auto-grouping convention** applies: a host named
+  `raspi01-proxy` is automatically placed in group `proxy` (the suffix after the last `-`).
+- If no group is specified, all hosts in `~/.ssh/config` are returned.
 
-### Set up an alias (recommended)
-
-The wrapper `sentinel.sh` lets you type a short command from anywhere. Pick any name you
-want (`sentinel`, `lab`, `s`, ...):
+### 3. OpenAI key — `.env` (only for the CLI client)
 
 ```bash
-# bash
-echo "alias sentinel='bash $(pwd)/sentinel.sh'" >> ~/.bashrc && source ~/.bashrc
-# zsh
-echo "alias sentinel='bash $(pwd)/sentinel.sh'" >> ~/.zshrc && source ~/.zshrc
+cp .env.example .env
+# then edit .env:
+#   OPENAI_API_KEY=sk-...
+#   OPENAI_MODEL=gpt-4o
 ```
 
-### Interactive chat
+> The key is read **exclusively from `.env`** (never from the shell), and `.env` is
+> git-ignored. It is never logged or returned by any tool.
+
+## Running the MCP Server
+
+The server speaks MCP over **stdio**. Run it directly to connect it to any MCP-compatible
+client:
+
+```bash
+uv run lab-sentinel-mcp
+# or, with the alias:
+sentinel-mcp
+```
+
+The server process blocks and waits for MCP messages — it is not meant to be run
+interactively in a terminal. Use it as a subprocess from an MCP client.
+
+## Running the CLI Client
+
+The `sentinel` command opens an **interactive chat session** powered by OpenAI GPT-4o.
+The model orchestrates the MCP tools automatically based on your questions.
 
 ```bash
 sentinel
+# or:
+uv run lab-sentinel
 ```
 
-```
-╭─ lab-sentinel ───────────────────────────────────────────────╮
-│   MCP Lab Sentinel                                            │
-│   Read-only AI diagnostics for your lab infrastructure        │
-│                                                               │
-│   model gpt-4o   ·   /help for tips   ·   exit to quit        │
-╰───────────────────────────────────────────────────────────────╯
+You get a prompt where you type your questions in natural language:
 
-You › _
+```
+You › Quais máquinas estão online no laboratorio-demo?
+You › Algum host está com disco acima de 80%?
+You › Gere um relatório completo do laboratorio-demo.
+You › exit
 ```
 
-While the assistant works, a spinner shows what it is doing
-(`Pinging raspi01...`, `Reading resources from raspi01...`). In-chat commands:
+The client launches the MCP server as a subprocess, exposes its tools to the model, and
+prints a Markdown-formatted answer to each question. Type `exit` or press `Ctrl+C` to quit.
 
-- `/help` — usage tips
-- `/hosts` — list registered hosts instantly (no AI call, no cost)
-- `exit` — quit
+---
 
-### See every step (verbose)
+## Docker Demo (no hardware needed)
+
+Spin up a complete simulated lab in three commands:
 
 ```bash
-sentinel -v
+cd docker
+./setup-keys.sh                    # 1. generate a local-only demo SSH key
+docker compose up -d --build       # 2. start 3 Alpine+SSH containers
+                                   #    raspi01→2400  raspi02→2401  proxy109→2402
 ```
 
-Prints each reasoning turn and tool call:
-
-```
-─── working ───
-  › Thinking
-  › Listing hosts
-  › Reading resources from raspi01
-  › Thinking
-───────────────
-```
-
-### One-shot (scripts, piping)
+Then wire it into your SSH config and groups:
 
 ```bash
-sentinel "Quais maquinas estao online?"
+# 3. append the demo hosts to your SSH config (adjust IdentityFile path)
+cat docker/ssh_config.example >> ~/.ssh/config
+
+# 4. copy the demo groups
+cp docker/.sentinel.yaml.example .sentinel.yaml
 ```
 
-## Scenarios
-
-### Scenario A — Real hardware (the primary use case)
-
-You already have `Host` entries for your boards, including jump hosts:
-
-```
-Host proxy109
-    HostName 200.132.136.134
-    User emanuel
-    IdentityFile ~/.ssh/id_ed25519_209
-
-Host raspi01-proxy
-    HostName localhost
-    User emanuel
-    Port 2400
-    ProxyJump proxy109
-```
-
-Just run `sentinel`. Optionally group your real hosts in `.sentinel.yaml`.
-
-### Scenario B — Virtual machines
-
-Identical to real hardware — add SSH entries pointing at the VM IP/port and run `sentinel`.
-No code changes.
-
-### Scenario C — Docker demo (no hardware needed)
-
-Spins up 3 Alpine+SSH containers that behave like lab hosts. Run from the project root:
+Start the interactive client and try it:
 
 ```bash
-bash docker/setup-keys.sh                                  # 1. one-time demo key
-docker compose -f docker/docker-compose.yml up -d --build  # 2. start containers
-cat docker/ssh_config.example >> ~/.ssh/config             # 3. register hosts (one-time)
-cp docker/.sentinel.yaml.example .sentinel.yaml            # 4. optional demo group
-ssh raspi01-demo "echo connected"                          # 5. verify it works
-sentinel                                                    # 6. ask away
+sentinel
+You › Gere um relatório do laboratorio-demo
 ```
 
-| Container | localhost port | SSH alias |
-|-----------|----------------|-----------|
-| sentinel-raspi01 | 2400 | `raspi01-demo` |
-| sentinel-raspi02 | 2401 | `raspi02-demo` |
-| sentinel-proxy109 | 2402 | `proxy109-demo` |
+Tear down when finished:
 
-Tear down: `docker compose -f docker/docker-compose.yml down`.
+```bash
+cd docker && docker compose down
+```
 
-A real report from this setup: [`examples/relatorio-exemplo.md`](examples/relatorio-exemplo.md).
+---
 
-## Use cases
+## Available Tools
 
-For a professor or lab admin managing a fleet:
+| Tool | Input | Description |
+|------|-------|-------------|
+| `list_hosts` | `group?` | List registered hosts (sanitized — no key paths). Pass a group name to filter. |
+| `ping_host` | `name` | Is the host reachable? Returns online status and latency in ms. |
+| `check_ssh` | `name` | Attempts an SSH connection and reports success or the error. |
+| `get_os_info` | `name` | Returns OS name, version, kernel, and architecture via SSH. |
+| `get_resource_status` | `name` | Returns disk %, memory %, uptime, and SSH service status. |
+| `get_network_info` | `name` | Returns interfaces, IPs, gateway, routes, open ports, and ARP neighbors. |
+| `generate_report` | `filter_tag?` | Generates a full Markdown report for all hosts or a specific group. |
+| `check_ssh_config` | — | Audits `~/.ssh/config` for duplicate aliases, missing `IdentityFile`, non-standard ports, and other common issues. |
+| `suggest_fix` | `name` | Provides safe, read-only remediation suggestions based on the host's current state. |
 
-- **Before class** — *"Faca um checklist do laboratorio-109: estao todos online, SSH ok, disco abaixo de 80%?"*
-- **Quick triage** — *"Quais maquinas estao offline agora?"*
-- **Inventory at a glance** — *"Quais maquinas estao cadastradas e qual SO usam?"*
-- **Capacity** — *"Algum host esta com disco ou memoria alta?"*
-- **Config hygiene** — *"O meu ~/.ssh/config tem aliases duplicados ou sem IdentityFile?"*
-- **Handover report** — *"Gere um relatorio completo do laboratorio-109."*
-- **How do I connect** — *"Qual o comando para acessar o raspi01?"* → answers with `ssh raspi01`.
+## Resources & Prompts
 
-## Tools, Resources and Prompts
+**Resources** (readable context that MCP clients can fetch):
+- `sentinel://hosts` — sanitized host inventory (no key paths)
+- `sentinel://config` — SSH config audit summary
 
-The server demonstrates all three MCP primitives.
+**Prompts** (ready-to-use templates for common tasks):
+- `analise_lab(group)` — full end-to-end lab analysis: ping → SSH → OS → resources → report
+- `status_geral()` — quick online/SSH status of all hosts
+- `checklist_aula(group)` — pre-class readiness checklist for a lab group
 
-**Tools**
+## Example Questions
 
-| Tool | Input | Returns |
-|------|-------|---------|
-| `list_hosts` | `group?` | Registered hosts (no key paths) |
-| `ping_host` | `name` | Reachability + latency |
-| `check_ssh` | `name` | Whether SSH connects |
-| `get_os_info` | `name` | OS, version, kernel, architecture |
-| `get_resource_status` | `name` | Disk %, memory %, uptime, SSH service |
-| `generate_report` | `filter_tag?` | Full Markdown report |
-| `check_ssh_config` | — | Audit of `~/.ssh/config` |
-| `suggest_fix` | `name` | Safe remediation suggestions |
+```text
+Quais máquinas estão online no laboratorio-demo?
 
-**Resources:** `sentinel://hosts` (inventory), `sentinel://config` (config audit).
+Analise o laboratorio-demo e diga quais máquinas precisam de atenção.
 
-**Prompts:** `analise_lab(group)`, `status_geral()`, `checklist_aula(group)`.
+Algum host está com disco acima de 80%?
 
-## Minimal tests
+O meu ~/.ssh/config tem inconsistências?
 
-Run the full suite: `uv run pytest` (64 tests). The essential cases:
+Faça um checklist do laboratorio-demo antes da aula.
 
-| ID | What it checks | Expected |
-|----|----------------|----------|
-| TC-01 | Unknown host is rejected | `HostNotFoundError` |
-| TC-02 | Offline host detected | `ping_host` returns `online: false` |
-| TC-03 | SSH config parsed | aliases, ports and ProxyJump resolved correctly |
-| TC-04 | **Works without `.sentinel.yaml`** | full inventory usable from `~/.ssh/config` alone |
-| TC-05 | Auto-grouping | `raspi01-proxy` joins auto-group `proxy` with no config file |
-| TC-06 | **Forbidden command blocked** | `rm`, `sudo`, piped/chained commands raise `SecurityError` |
-| TC-07 | OS/resource parsing | raw `os-release`/`df`/`free`/`uptime` parsed into structured data |
-| TC-08 | Offline host doesn't crash | `get_resource_status` returns empty status, no exception |
-| TC-09 | Report completeness | always has Summary, Hosts, Alerts, Suggestions |
-| TC-10 | **No key leakage** | tool output never contains `identity_file` or key paths |
-| TC-11 | **Key only from `.env`** | a key in the shell env is ignored |
+Me mostre as interfaces de rede e portas abertas do raspi01-demo.
+```
 
-## Security
+## Test Cases
 
-Secure by default (see [ADR-004](docs/adr/ADR-004-security-boundaries.md)):
+Run the suite with `uv run pytest` (64 tests). Key cases, in plain language:
 
-- **Read-only** — nothing is ever modified on a host.
-- **Allowlist** — only hosts in `~/.ssh/config` can be targeted; no arbitrary IPs.
-- **Command whitelist** — a fixed set of read-only commands; anything else raises `SecurityError`.
-- **No secret leakage** — key paths, private keys and `.env` values never appear in output.
-- Never runs `rm`, `reboot`, `shutdown`, `sudo`, `dd`, `mkfs`, `systemctl stop/restart`, ...
-- Never modifies `~/.ssh/config`.
+| ID | Verifies | Expected result |
+|----|----------|-----------------|
+| **TC-001** | Unknown host is rejected | `ping_host("ghost")` → `HostNotFoundError` (`Host 'ghost' is not registered…`) |
+| **TC-002** | Offline host detected | `ping_host` on a down host → `online: false` |
+| **TC-003** | SSH config parsed | `raspi01-demo` resolves to its real IP and port |
+| **TC-004** | Multi-alias blocks | Multiple hosts resolve from a single SSH config block |
+| **TC-005** | Groups from `.sentinel.yaml` | `list_hosts("laboratorio-109")` returns exactly the configured members |
+| **TC-006** | Auto-grouping convention | `raspi01-proxy` lands in auto-group `proxy` with no config file |
+| **TC-007** | **Forbidden command blocked** | `rm -rf /`, `sudo reboot`, piped/chained commands → `SecurityError` |
+| **TC-008** | OS parsing | `/etc/os-release` + `uname` → correct OS/kernel/arch |
+| **TC-009** | Resource parsing | `df`/`free`/`uptime` → disk %, memory %, uptime |
+| **TC-010** | Offline host doesn't crash | `get_resource_status` on a dead host → empty status, no exception |
+| **TC-011** | Report sections | Report always has Summary, Hosts, Alerts, Suggestions, timestamp |
+| **TC-012** | High-disk alert | Disk ≥ 80% → alert + suggestion mentioning the host |
+| **TC-013** | SSH config audit | Detects duplicate alias, missing IdentityFile, non-standard port |
+| **TC-014** | **No key leakage** | `list_hosts` output never contains `identity_file` or key paths |
+| **TC-015** | **Key only from `.env`** | A key in the shell env is ignored; missing `.env` key → `MissingKeyError` |
 
-## Limitations and roadmap
+## Security Policy
 
-Depends on host connectivity and pre-configured SSH access. It diagnoses and suggests —
-it never fixes anything automatically. For defensive and academic use only.
+This project is **secure by default**:
 
-- [x] MVP: inventory, ping, SSH, OS info, report
-- [x] Advanced: resources, SSH-config audit, alerts
-- [x] DevSecOps: Docker demo, tests, docs
-- [ ] Next: SSE transport (multi-client), SQLite history, run-to-run comparison
+- ✅ **Read-only**: every action only reads state
+- ✅ **Host allowlist**: only hosts in `~/.ssh/config` can be targeted — no arbitrary IPs
+- ✅ **Command whitelist**: a fixed set of read-only commands; anything else → `SecurityError`
+- ✅ **No secret leakage**: key paths, private keys, and `.env` values never appear in output
+- ✅ **No `StrictHostKeyChecking=no`** by default
+- ✅ **Never** runs `rm`, `reboot`, `shutdown`, `sudo`, `dd`, `mkfs`, `systemctl stop/restart`, …
+- ✅ **Never** modifies `~/.ssh/config`
+
+## Limitations
+
+- Depends on connectivity to the hosts.
+- SSH access must be pre-configured (keys in place).
+- The server never fixes problems automatically — it only diagnoses and suggests.
+- Not intended for unauthorized network scanning. Defensive/academic use only.
+
+## Roadmap
+
+- [x] **Phase 1 — MVP**: inventory, ping, SSH, OS info, report
+- [x] **Phase 2 — Advanced diagnostics**: resources, SSH-config audit, network info, alerts
+- [x] **Phase 3 — DevSecOps**: Docker demo, automated tests, full docs
+- [ ] **Phase 4 — Extensions**: SQLite history, dashboard, run-to-run comparison, CI
+
+---
+
+<div align="center">
+<sub>Built as a hands-on MCP lab for networking, IoT, OS, and DevSecOps courses.</sub>
+</div>

@@ -4,14 +4,14 @@ import subprocess
 
 import pytest
 
-from lab_sentinel.connectivity import (
+from lab_sentinel.adapters.connectivity import (
     ALLOWED_COMMANDS,
     ParamikoSSHAdapter,
     SubprocessPingAdapter,
     _assert_allowed,
 )
-from lab_sentinel.errors import SecurityError
-from lab_sentinel.models import LabHost
+from lab_sentinel.domain.errors import SecurityError
+from lab_sentinel.domain.models import LabHost
 
 HOST = LabHost(name="h", host="localhost", user="pi", port=22)
 

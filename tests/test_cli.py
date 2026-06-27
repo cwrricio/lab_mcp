@@ -2,7 +2,7 @@
 
 import pytest
 
-from lab_sentinel.cli import MissingKeyError, load_openai_config
+from lab_sentinel.entrypoints.cli import MissingKeyError, load_openai_config
 
 
 def test_cli_fails_clearly_without_env_key(tmp_path):

@@ -2,8 +2,8 @@
 
 import pytest
 
-from lab_sentinel.diagnostics import DiagnosticsService
-from lab_sentinel.errors import HostNotFoundError
+from lab_sentinel.core.diagnostics import DiagnosticsService
+from lab_sentinel.domain.errors import HostNotFoundError
 from tests.conftest import FakeInventory, FakePing, FakeSSH
 
 

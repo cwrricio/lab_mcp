@@ -16,10 +16,10 @@ for _noisy in ("paramiko", "asyncio", "mcp", "mcp.server", "mcp.server.lowlevel"
 
 from mcp.server.fastmcp import FastMCP
 
-from .diagnostics import DiagnosticsService
-from .errors import SentinelError
-from .factory import build_service
-from .ssh_audit import audit_ssh_config
+from lab_sentinel.core.diagnostics import DiagnosticsService
+from lab_sentinel.domain.errors import SentinelError
+from lab_sentinel.entrypoints.factory import build_service
+from lab_sentinel.adapters.ssh_audit import audit_ssh_config
 
 
 def build_server(service: DiagnosticsService) -> FastMCP:
@@ -29,9 +29,16 @@ def build_server(service: DiagnosticsService) -> FastMCP:
     # -- Tools -----------------------------------------------------------
 
     @mcp.tool()
-    def list_hosts(group: str | None = None) -> dict:
-        """List registered hosts from the SSH config inventory (sanitized)."""
-        hosts = service.list_hosts(group=group)
+    def list_hosts(group: str | None = None, name_filter: str | None = None) -> dict:
+        """List registered hosts from the SSH config inventory (sanitized).
+
+        Args:
+            group: Return only hosts that belong to this group (exact match on tag).
+            name_filter: Return only hosts whose name contains this substring
+                (case-insensitive). Use this when the user refers to a partial
+                name such as "raspi", "proxy", or "demo".
+        """
+        hosts = service.list_hosts(group=group, name_filter=name_filter)
         return {"hosts": [h.public_view() for h in hosts]}
 
     @mcp.tool()
@@ -69,6 +76,32 @@ def build_server(service: DiagnosticsService) -> FastMCP:
         except SentinelError as exc:
             return {"name": name, "error": str(exc)}
         return {"name": name, **asdict(status)}
+
+    @mcp.tool()
+    def get_network_info(name: str) -> dict:
+        """Get network interfaces, IPs, routes, listening services and ARP neighbors of a host."""
+        try:
+            info = service.get_network_info(name)
+        except SentinelError as exc:
+            return {"name": name, "error": str(exc)}
+        return {
+            "name": name,
+            "hostname": info.hostname,
+            "interfaces": [
+                {
+                    "name": iface.name,
+                    "state": iface.state,
+                    "mac": iface.mac,
+                    "ipv4": iface.ipv4,
+                    "ipv6": iface.ipv6,
+                }
+                for iface in info.interfaces
+            ],
+            "default_gateway": info.default_gateway,
+            "routes": info.routes,
+            "listening_services": info.listening_services,
+            "arp_neighbors": info.arp_neighbors,
+        }
 
     @mcp.tool()
     def generate_report(filter_tag: str | None = None) -> dict:

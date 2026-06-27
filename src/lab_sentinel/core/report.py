@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .results import HostDiagnostic
+from lab_sentinel.domain.results import HostDiagnostic
 
 DISK_ALERT_THRESHOLD = 80
 MEMORY_ALERT_THRESHOLD = 85
@@ -92,6 +92,19 @@ def build_report(diagnostics: list[HostDiagnostic], group: str | None = None) ->
             lines.append(f"- Disk: {_fmt_pct(r.disk_used_percent)}")
             lines.append(f"- Memory: {_fmt_pct(r.memory_used_percent)}")
             lines.append(f"- Uptime: {r.uptime or 'unknown'}")
+        if d.network:
+            n = d.network
+            if n.default_gateway:
+                lines.append(f"- Gateway: {n.default_gateway}")
+            active_ifaces = [i for i in n.interfaces if i.state == "UP" and i.ipv4]
+            if active_ifaces:
+                for iface in active_ifaces:
+                    ips = ", ".join(iface.ipv4)
+                    lines.append(f"- Interface {iface.name}: {ips}")
+            if n.listening_services:
+                lines.append(f"- Listening: {', '.join(n.listening_services)}")
+            if n.arp_neighbors:
+                lines.append(f"- ARP neighbors: {len(n.arp_neighbors)} host(s) on LAN")
         lines.append("")
 
     lines.append("## Alerts")

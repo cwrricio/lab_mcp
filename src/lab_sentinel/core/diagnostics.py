@@ -6,10 +6,10 @@ SSHClientPort, which makes every method unit-testable with fakes.
 
 from __future__ import annotations
 
-from . import parsers
-from .ports import InventoryPort, PingPort, SSHClientPort
-from .report import build_report
-from .results import HostDiagnostic, OSInfo, PingResult, ResourceStatus, SSHCheckResult
+from lab_sentinel.core import parsers
+from lab_sentinel.domain.ports import InventoryPort, PingPort, SSHClientPort
+from lab_sentinel.core.report import build_report
+from lab_sentinel.domain.results import HostDiagnostic, NetworkInfo, OSInfo, PingResult, ResourceStatus, SSHCheckResult
 
 
 class DiagnosticsService:
@@ -23,9 +23,9 @@ class DiagnosticsService:
         self._ping = ping
         self._ssh = ssh
 
-    def list_hosts(self, group: str | None = None):
+    def list_hosts(self, group: str | None = None, name_filter: str | None = None):
         """Public passthrough to the inventory allowlist."""
-        return self._inventory.list_hosts(group=group)
+        return self._inventory.list_hosts(group=group, name_filter=name_filter)
 
     def ping_host(self, name: str) -> PingResult:
         host = self._inventory.get_host(name)  # raises HostNotFoundError
@@ -46,6 +46,16 @@ class DiagnosticsService:
         os_release = self._safe_run(host, "cat /etc/os-release")
         uname = self._safe_run(host, "uname -a")
         return parsers.build_os_info(os_release, uname)
+
+    def get_network_info(self, name: str) -> NetworkInfo:
+        host = self._inventory.get_host(name)
+        hostname_i = self._safe_run(host, "hostname -I")
+        ip_addr = self._safe_run(host, "ip addr show")
+        ip_route = self._safe_run(host, "ip route show")
+        ss_out = self._safe_run(host, "ss -tlnp")
+        arp_out = self._safe_run(host, "cat /proc/net/arp")
+        iw_out = self._safe_run(host, "iw dev")
+        return parsers.build_network_info(hostname_i, ip_addr, ip_route, ss_out, arp_out, iw_out)
 
     def get_resource_status(self, name: str) -> ResourceStatus:
         host = self._inventory.get_host(name)
@@ -68,6 +78,7 @@ class DiagnosticsService:
         if diag.ssh_ok:
             diag.os = self.get_os_info(name)
             diag.resources = self.get_resource_status(name)
+            diag.network = self.get_network_info(name)
         return diag
 
     def generate_report(self, group: str | None = None) -> str:

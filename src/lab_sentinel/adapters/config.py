@@ -12,8 +12,8 @@ from pathlib import Path
 import paramiko
 import yaml
 
-from .errors import HostNotFoundError
-from .models import LabHost
+from lab_sentinel.domain.errors import HostNotFoundError
+from lab_sentinel.domain.models import LabHost
 
 DEFAULT_SSH_CONFIG = "~/.ssh/config"
 DEFAULT_GROUPS_FILE = ".sentinel.yaml"
@@ -105,11 +105,18 @@ class SSHConfigInventoryAdapter:
 
     # -- InventoryPort ---------------------------------------------------
 
-    def list_hosts(self, group: str | None = None) -> list[LabHost]:
+    def list_hosts(
+        self,
+        group: str | None = None,
+        name_filter: str | None = None,
+    ) -> list[LabHost]:
         hosts = list(self._hosts.values())
-        if group is None:
-            return hosts
-        return [h for h in hosts if group in h.tags]
+        if group is not None:
+            hosts = [h for h in hosts if group in h.tags]
+        if name_filter is not None:
+            needle = name_filter.lower()
+            hosts = [h for h in hosts if needle in h.name.lower()]
+        return hosts
 
     def get_host(self, name: str) -> LabHost:
         try:
