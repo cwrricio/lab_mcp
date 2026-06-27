@@ -177,15 +177,34 @@ Or register it in **Claude Desktop** (`claude_desktop_config.json`):
 
 ## Running the CLI Client
 
-A terminal client that uses OpenAI GPT-4o to orchestrate the tools:
+### Step 1 — Add the alias (one-time)
 
 ```bash
-uv run lab-sentinel "Analise o laboratório demo e diga o que precisa de atenção"
-uv run lab-sentinel "Quais máquinas estão online e qual SO usam?"
+echo "alias sentinel='bash $(pwd)/sentinel.sh'" >> ~/.bashrc
+source ~/.bashrc
 ```
 
-The client launches the MCP server as a subprocess, exposes its tools to the model, and
-prints a Markdown answer.
+### Step 2 — Start the chat
+
+```bash
+sentinel
+```
+
+You'll see a prompt:
+
+```
+╔══════════════════════════════════════════════════════╗
+║           🛰️  MCP Lab Sentinel — Chat Mode           ║
+║  Ask anything about your lab. Type 'exit' to quit.   ║
+╚══════════════════════════════════════════════════════╝
+
+🔍 You:
+```
+
+Type your question in natural language. The client launches the MCP server as a
+subprocess, the model orchestrates the tools, and returns a Markdown answer.
+
+> **One-shot mode** (for scripts): `sentinel "sua pergunta"` — answers and exits.
 
 ---
 
@@ -237,33 +256,94 @@ hardware.
 
 ## Environment 3 — Docker Demo (no hardware needed)
 
-Spin up a complete simulated lab in three commands:
+Simulates a complete lab with 3 Alpine+SSH containers running locally.
+All commands run from the **project root** (`lab_mcp/`).
+
+### Step 1 — Generate the demo SSH key (one-time)
 
 ```bash
-cd docker
-./setup-keys.sh                    # 1. generate a local-only demo SSH key
-docker compose up -d --build       # 2. start 3 Alpine+SSH containers
-                                   #    raspi01→2400  raspi02→2401  proxy109→2402
+bash docker/setup-keys.sh
 ```
 
-Then wire it into your SSH config and groups:
+Output confirms the key was created at `docker/keys/sentinel_demo`.
+
+### Step 2 — Start the containers
 
 ```bash
-# 3. append the demo hosts to your SSH config (adjust IdentityFile path)
-cat docker/ssh_config.example >> ~/.ssh/config
+docker compose -f docker/docker-compose.yml up -d --build
+```
 
-# 4. copy the demo groups
+Three containers start:
+
+| Container | Port on localhost | Alias |
+|-----------|-------------------|-------|
+| sentinel-raspi01 | 2400 | `raspi01-demo` |
+| sentinel-raspi02 | 2401 | `raspi02-demo` |
+| sentinel-proxy109 | 2402 | `proxy109-demo` |
+
+### Step 3 — Register the demo hosts in your SSH config (one-time)
+
+```bash
+cat docker/ssh_config.example >> ~/.ssh/config
+```
+
+Verify it works:
+
+```bash
+ssh raspi01-demo "echo connected"   # should print: connected
+```
+
+### Step 4 — Create the groups file
+
+```bash
 cp docker/.sentinel.yaml.example .sentinel.yaml
 ```
 
-Run a report:
+This creates a `laboratorio-demo` group pointing to the three containers.
+
+### Step 5 — Start the sentinel chat
 
 ```bash
-uv run lab-sentinel "Gere um relatório do laboratorio-demo"
+sentinel
+```
+
+### Suggested test questions (Docker)
+
+Copy-paste these one by one at the `🔍 You:` prompt:
+
+```
+Quais máquinas estão registradas no grupo laboratorio-demo?
+```
+```
+Todas as máquinas do laboratorio-demo estão online?
+```
+```
+Qual sistema operacional cada máquina do laboratorio-demo usa?
+```
+```
+Gere um relatório completo do laboratorio-demo.
+```
+```
+Algum host do laboratorio-demo está com disco ou memória alta?
+```
+```
+O meu arquivo ~/.ssh/config tem algum problema ou inconsistência?
+```
+```
+Faça um checklist do laboratorio-demo como se fosse antes de uma aula.
+```
+```
+raspi01-demo está com SSH funcionando? Qual é o uptime dele?
+```
+
+### Step 6 — Tear down when finished
+
+```bash
+docker compose -f docker/docker-compose.yml down
 ```
 
 <details>
-<summary>📄 Example output (from a real run — see <code>examples/relatorio-exemplo.md</code>)</summary>
+<summary>📄 Example output from a real run (see <code>examples/relatorio-exemplo.md</code>)</summary>
 
 ```markdown
 # Lab Sentinel Report — laboratorio-demo
@@ -281,17 +361,12 @@ uv run lab-sentinel "Gere um relatório do laboratorio-demo"
 - SSH: working
 - OS: Alpine Linux / Alpine Linux v3.20
 - Disk: 6%
-- Memory: 32%
+- Memory: 33%
+- Uptime: 6:10
 ...
 ```
 
 </details>
-
-Tear down when finished:
-
-```bash
-cd docker && docker compose down
-```
 
 ---
 
@@ -321,15 +396,32 @@ cd docker && docker compose down
 
 ## Example Questions
 
-```text
-Analise o laboratório 109 e diga quais máquinas estão online, qual SO usam
-e quais problemas precisam de atenção.
+**Inventário e conectividade**
+```
+Quais máquinas estão cadastradas?
+Todas as máquinas do laboratorio-109 estão online?
+raspi01-proxy está respondendo? Qual a latência?
+```
 
+**Sistema operacional e recursos**
+```
+Qual sistema operacional o raspi01-proxy usa?
 Algum host está com disco acima de 80%?
+Como está a memória de todas as máquinas?
+Qual o uptime do proxy109?
+```
 
-O meu ~/.ssh/config tem inconsistências?
+**Relatórios**
+```
+Gere um relatório completo do laboratorio-109.
+Faça um checklist do laboratorio-demo como se fosse antes de uma aula.
+```
 
-Faça um checklist do laboratorio-demo antes da aula.
+**Diagnóstico e sugestões**
+```
+O meu ~/.ssh/config tem inconsistências ou problemas?
+O que devo fazer se o raspi02-proxy não responde?
+Alguma máquina precisa de atenção agora?
 ```
 
 ## Test Cases

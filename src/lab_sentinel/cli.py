@@ -121,11 +121,34 @@ async def _run_query(query: str, config: OpenAIConfig) -> str:
             return "Reached the maximum number of reasoning steps without a final answer."
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        print('Usage: lab-sentinel "<your question>"', file=sys.stderr)
-        sys.exit(2)
+_BANNER = """
+╔══════════════════════════════════════════════════════╗
+║           🛰️  MCP Lab Sentinel — Chat Mode           ║
+║  Ask anything about your lab. Type 'exit' to quit.   ║
+╚══════════════════════════════════════════════════════╝
+"""
 
+
+def _chat_loop(config: OpenAIConfig) -> None:
+    print(_BANNER)
+    while True:
+        try:
+            query = input("🔍 You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye!")
+            break
+        if not query:
+            continue
+        if query.lower() in {"exit", "quit", "sair"}:
+            print("Bye!")
+            break
+        print()
+        answer = asyncio.run(_run_query(query, config))
+        print(answer)
+        print()
+
+
+def main() -> None:
     env_file = os.getenv("SENTINEL_ENV_FILE", DEFAULT_ENV_FILE)
     try:
         config = load_openai_config(env_file)
@@ -133,9 +156,13 @@ def main() -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    query = " ".join(sys.argv[1:])
-    answer = asyncio.run(_run_query(query, config))
-    print(answer)
+    if len(sys.argv) > 1:
+        # One-shot mode: pass query directly (useful for scripts/piping)
+        query = " ".join(sys.argv[1:])
+        print(asyncio.run(_run_query(query, config)))
+    else:
+        # Interactive chat mode
+        _chat_loop(config)
 
 
 if __name__ == "__main__":
