@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import dotenv_values
+
+# Suppress noisy INFO logs from paramiko and mcp unless explicitly running verbose.
+logging.getLogger("paramiko").setLevel(logging.WARNING)
+logging.getLogger("mcp").setLevel(logging.WARNING)
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -48,7 +53,10 @@ SYSTEM_PROMPT = (
     "You are MCP Lab Sentinel, a read-only infrastructure diagnostics assistant. "
     "Use the provided tools to answer questions about lab hosts. Only act on hosts "
     "returned by list_hosts. Never invent hosts or data. Summarize findings in clear "
-    "Markdown, in the language the user used."
+    "Markdown, in the language the user used.\n\n"
+    "When telling the user how to SSH into a host, always use the SSH alias from the "
+    "inventory (e.g. `ssh raspi01-demo`), never the raw `user@host -p port` form, "
+    "because the alias already carries the correct key, port and ProxyJump settings."
 )
 
 
