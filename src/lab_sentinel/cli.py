@@ -1,4 +1,4 @@
-"""Terminal CLI client that drives the MCP server with OpenAI GPT-4o.
+"""Terminal client that drives the MCP server with OpenAI.
 
 The MCP server is the product; this client is a demonstration of consuming it.
 The OpenAI API key is read EXCLUSIVELY from a local ``.env`` file (never from the
@@ -14,49 +14,59 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
+
+# Silence library INFO logs (paramiko auth, mcp requests) so the UI stays clean.
+for _noisy in ("paramiko", "mcp", "asyncio"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 from dotenv import dotenv_values
-
-# Suppress noisy INFO logs from paramiko and mcp unless explicitly running verbose.
-logging.getLogger("paramiko").setLevel(logging.WARNING)
-logging.getLogger("mcp").setLevel(logging.WARNING)
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
-from rich.spinner import Spinner
-from rich.status import Status
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
 DEFAULT_MODEL = "gpt-4o"
 DEFAULT_ENV_FILE = ".env"
+MAX_REASONING_TURNS = 10
 
 _THEME = Theme(
     {
-        "banner.title": "bold cyan",
-        "banner.sub": "dim white",
-        "prompt.label": "bold green",
-        "tool.name": "bold yellow",
-        "tool.args": "dim yellow",
-        "tool.result": "dim cyan",
-        "step.header": "bold blue",
+        "title": "bold cyan",
+        "subtle": "dim white",
+        "prompt": "bold green",
+        "tool": "yellow",
+        "args": "dim yellow",
+        "step": "bold blue",
         "error": "bold red",
-        "info": "dim white",
+        "ok": "green",
     }
 )
-
 console = Console(theme=_THEME, highlight=False)
+
+# Human-readable hints shown in the spinner while a tool runs.
+_TOOL_LABELS = {
+    "list_hosts": "Listing hosts",
+    "ping_host": "Pinging",
+    "check_ssh": "Checking SSH on",
+    "get_os_info": "Reading OS info from",
+    "get_resource_status": "Reading resources from",
+    "generate_report": "Building report",
+    "check_ssh_config": "Auditing SSH config",
+    "suggest_fix": "Analyzing",
+}
 
 SYSTEM_PROMPT = (
     "You are MCP Lab Sentinel, a read-only infrastructure diagnostics assistant. "
     "Use the provided tools to answer questions about lab hosts. Only act on hosts "
-    "returned by list_hosts. Never invent hosts or data. Summarize findings in clear "
-    "Markdown, in the language the user used.\n\n"
+    "returned by list_hosts. Never invent hosts or data. Answer in clear Markdown, "
+    "in the same language the user used.\n\n"
     "When telling the user how to SSH into a host, always use the SSH alias from the "
-    "inventory (e.g. `ssh raspi01-demo`), never the raw `user@host -p port` form, "
-    "because the alias already carries the correct key, port and ProxyJump settings."
+    "inventory (e.g. `ssh raspi01`), never the raw `user@host -p port` form, because "
+    "the alias already carries the correct key, port and ProxyJump settings."
 )
 
 
@@ -89,26 +99,39 @@ def load_openai_config(env_path: str | os.PathLike[str] = DEFAULT_ENV_FILE) -> O
     return OpenAIConfig(api_key=api_key, model=model)
 
 
-# -- MCP tool bridging ---------------------------------------------------
+# -- MCP <-> OpenAI bridge -----------------------------------------------
 
 def _mcp_tools_to_openai(tools) -> list[dict]:
-    specs = []
-    for tool in tools:
-        specs.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description or "",
-                    "parameters": tool.inputSchema or {"type": "object", "properties": {}},
-                },
-            }
-        )
-    return specs
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description or "",
+                "parameters": t.inputSchema or {"type": "object", "properties": {}},
+            },
+        }
+        for t in tools
+    ]
 
 
-async def _run_query(query: str, config: OpenAIConfig, verbose: bool = False) -> str:
-    """Start the MCP server over stdio and let GPT-4o orchestrate the tools."""
+def _tool_label(name: str, args: dict) -> str:
+    """A short, friendly progress label for the spinner."""
+    base = _TOOL_LABELS.get(name, name)
+    target = args.get("name") or args.get("group") or args.get("filter_tag")
+    return f"{base} {target}".strip() if target else base
+
+
+async def _run_query(
+    query: str,
+    config: OpenAIConfig,
+    on_event: Callable[[str], None] | None = None,
+) -> str:
+    """Start the MCP server over stdio and let the model orchestrate the tools.
+
+    ``on_event(message)`` is called with a human-readable progress string before
+    each tool call, so the caller can update a spinner.
+    """
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     from openai import OpenAI
@@ -118,26 +141,23 @@ async def _run_query(query: str, config: OpenAIConfig, verbose: bool = False) ->
         command=sys.executable, args=["-m", "lab_sentinel.server"], env=os.environ.copy()
     )
 
+    def emit(message: str) -> None:
+        if on_event:
+            on_event(message)
+
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tool_list = (await session.list_tools()).tools
             openai_tools = _mcp_tools_to_openai(tool_list)
 
-            if verbose:
-                _print_tools_table(tool_list)
-
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
             ]
 
-            for turn in range(10):
-                if verbose:
-                    console.print(
-                        f"\n[step.header]-- Reasoning turn {turn + 1} --[/step.header]"
-                    )
-
+            for _turn in range(MAX_REASONING_TURNS):
+                emit("Thinking")
                 response = client.chat.completions.create(
                     model=config.model, messages=messages, tools=openai_tools
                 )
@@ -149,18 +169,11 @@ async def _run_query(query: str, config: OpenAIConfig, verbose: bool = False) ->
 
                 for call in msg.tool_calls:
                     args = json.loads(call.function.arguments or "{}")
-                    if verbose:
-                        console.print(
-                            f"  [tool.name]calling[/tool.name] {call.function.name}"
-                            f"  [tool.args]{json.dumps(args)}[/tool.args]"
-                        )
+                    emit(_tool_label(call.function.name, args))
                     result = await session.call_tool(call.function.name, args)
                     payload = "\n".join(
                         block.text for block in result.content if hasattr(block, "text")
                     )
-                    if verbose:
-                        preview = payload[:120].replace("\n", " ")
-                        console.print(f"  [tool.result]=> {preview}...[/tool.result]")
                     messages.append(
                         {"role": "tool", "tool_call_id": call.id, "content": payload}
                     )
@@ -168,60 +181,106 @@ async def _run_query(query: str, config: OpenAIConfig, verbose: bool = False) ->
             return "Reached the maximum number of reasoning steps without a final answer."
 
 
-def _print_tools_table(tools) -> None:
-    table = Table(title="Available Tools", show_lines=True, border_style="dim cyan")
-    table.add_column("Tool", style="bold yellow", no_wrap=True)
-    table.add_column("Description", style="white")
-    for t in tools:
-        table.add_row(t.name, t.description or "")
+# -- presentation --------------------------------------------------------
+
+def _banner(model: str) -> Panel:
+    body = Group(
+        Text("MCP Lab Sentinel", style="title"),
+        Text("Read-only AI diagnostics for your lab infrastructure", style="subtle"),
+        Text(""),
+        Text(f"model {model}   ·   /help for tips   ·   exit to quit", style="subtle"),
+    )
+    return Panel(body, border_style="cyan", padding=(1, 3), title="lab-sentinel", title_align="left")
+
+
+_HELP = """\
+**How to ask**
+
+Just type a question in plain language. Examples:
+
+- Quais maquinas estao online?
+- Qual o sistema operacional do raspi01?
+- Gere um relatorio completo do laboratorio.
+- Algum host esta com disco acima de 80%?
+- O meu ~/.ssh/config tem algum problema?
+
+**Commands**
+
+- `/help`   show this help
+- `/hosts`  list registered hosts (no AI call)
+- `exit`    quit
+
+**Flags**
+
+- `-v` / `--verbose`  show every tool call and result
+"""
+
+
+def _print_hosts() -> None:
+    """List the inventory directly, with no AI call (fast, free)."""
+    from .factory import build_service
+
+    hosts = build_service().list_hosts()
+    if not hosts:
+        console.print("[error]No hosts found in ~/.ssh/config.[/error]")
+        return
+    table = Table(border_style="dim cyan", show_lines=False)
+    table.add_column("Host", style="tool", no_wrap=True)
+    table.add_column("Address")
+    table.add_column("User")
+    table.add_column("Port", justify="right")
+    table.add_column("Groups", style="subtle")
+    for h in hosts:
+        table.add_row(h.name, h.host, h.user, str(h.port), ", ".join(h.tags) or "-")
     console.print(table)
 
 
-def _print_banner(model: str) -> None:
-    content = Text.assemble(
-        ("MCP Lab Sentinel\n", "banner.title"),
-        ("Read-only AI diagnostics for your lab infrastructure\n", "banner.sub"),
-        (f"Model: {model}   |   Type 'exit' to quit", "info"),
-    )
-    console.print(Panel(content, border_style="cyan", padding=(0, 2)))
+def _answer(query: str, config: OpenAIConfig, verbose: bool) -> None:
+    """Run one query and render the answer, with progress feedback."""
+    if verbose:
+        console.print(Rule("working", style="dim cyan"))
+        answer = asyncio.run(
+            _run_query(query, config, on_event=lambda m: console.print(f"  [step]›[/step] {m}"))
+        )
+        console.print(Rule(style="dim cyan"))
+    else:
+        with console.status("[subtle]Starting...[/subtle]", spinner="dots", spinner_style="cyan") as status:
+            answer = asyncio.run(
+                _run_query(query, config, on_event=lambda m: status.update(f"[subtle]{m}...[/subtle]"))
+            )
+    console.print(Markdown(answer))
 
 
 def _chat_loop(config: OpenAIConfig, verbose: bool) -> None:
-    _print_banner(config.model)
+    console.print(_banner(config.model))
     console.print()
-
     while True:
         try:
-            query = console.input("[prompt.label]You:[/prompt.label] ").strip()
+            query = console.input("[prompt]You ›[/prompt] ").strip()
         except (EOFError, KeyboardInterrupt):
-            console.print("\n[info]Exiting.[/info]")
+            console.print("\n[subtle]Bye.[/subtle]")
             break
         if not query:
             continue
-        if query.lower() in {"exit", "quit", "sair"}:
-            console.print("[info]Exiting.[/info]")
+        low = query.lower()
+        if low in {"exit", "quit", "sair"}:
+            console.print("[subtle]Bye.[/subtle]")
             break
-
+        if low in {"/help", "help", "?"}:
+            console.print(Markdown(_HELP))
+            continue
+        if low in {"/hosts", "hosts"}:
+            _print_hosts()
+            continue
         console.print()
-        if verbose:
-            answer = asyncio.run(_run_query(query, config, verbose=True))
-            console.print(Rule(style="dim cyan"))
-        else:
-            with Status(
-                "[info]Thinking...[/info]",
-                spinner="dots",
-                spinner_style="cyan",
-                console=console,
-            ):
-                answer = asyncio.run(_run_query(query, config, verbose=False))
-
-        console.print(Markdown(answer))
+        _answer(query, config, verbose)
         console.print()
 
 
 def main() -> None:
-    verbose = "--verbose" in sys.argv or "-v" in sys.argv
-    args = [a for a in sys.argv[1:] if a not in ("--verbose", "-v")]
+    flags = {"--verbose", "-v"}
+    verbose = any(a in flags for a in sys.argv[1:])
+    args = [a for a in sys.argv[1:] if a not in flags]
 
     env_file = os.getenv("SENTINEL_ENV_FILE", DEFAULT_ENV_FILE)
     try:
@@ -231,19 +290,7 @@ def main() -> None:
         sys.exit(1)
 
     if args:
-        query = " ".join(args)
-        if verbose:
-            answer = asyncio.run(_run_query(query, config, verbose=True))
-            console.print(Rule(style="dim cyan"))
-        else:
-            with Status(
-                "[info]Thinking...[/info]",
-                spinner="dots",
-                spinner_style="cyan",
-                console=console,
-            ):
-                answer = asyncio.run(_run_query(query, config, verbose=False))
-        console.print(Markdown(answer))
+        _answer(" ".join(args), config, verbose)
     else:
         _chat_loop(config, verbose)
 

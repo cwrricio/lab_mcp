@@ -6,7 +6,13 @@ This is a thin adapter over :class:`DiagnosticsService`. All sensitive data
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
+
+# Keep SSH/library chatter (paramiko auth lines, MCP request logs) out of the
+# server's stderr, which the client would otherwise surface to the user.
+for _noisy in ("paramiko", "asyncio", "mcp", "mcp.server", "mcp.server.lowlevel"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 from mcp.server.fastmcp import FastMCP
 

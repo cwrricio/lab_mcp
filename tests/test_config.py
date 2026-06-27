@@ -112,11 +112,16 @@ def test_auto_groups_by_naming_convention(ssh_config_file):
     assert {"raspi01-proxy", "raspi02-proxy"} <= names
 
 
-def test_missing_sentinel_yaml_does_not_raise(ssh_config_file, tmp_path):
+def test_works_fully_without_sentinel_yaml(ssh_config_file, tmp_path):
+    # Groups are optional: with no .sentinel.yaml the whole inventory is still
+    # usable straight from ~/.ssh/config. This is the default, zero-config path.
     inv = SSHConfigInventoryAdapter(
         ssh_config_file, groups_file=tmp_path / "nope.yaml"
     )
-    assert inv.list_hosts()  # still works from SSH config alone
+    all_hosts = inv.list_hosts()
+    assert {h.name for h in all_hosts} >= {"proxy109", "raspi01-proxy", "pc209"}
+    # A specific host resolves with full connection details.
+    assert inv.get_host("raspi01-proxy").port == 2400
 
 
 def test_identity_file_not_in_public_view(ssh_config_file):

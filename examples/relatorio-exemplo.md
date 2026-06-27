@@ -1,6 +1,6 @@
-# Lab -your-key-hereSent-your-key-hereinel Report — laboratorio-demo
+# Lab Sentinel Report — laboratorio-demo
 
-_Generated at 2026-06-26 23:38:24 UTC._
+_Generated at 2026-06-27 00:40:18 UTC._
 
 ## Summary
 - Hosts analyzed: 3
@@ -16,8 +16,8 @@ _Generated at 2026-06-26 23:38:24 UTC._
 - OS: Alpine Linux / Alpine Linux v3.20
 - Kernel: 6.17.0-35-generic (x86_64)
 - Disk: 6%
-- Memory: 32%
-- Uptime: 5:48
+- Memory: 35%
+- Uptime: 6:50
 
 ### raspi02-demo
 - Status: online
@@ -25,8 +25,8 @@ _Generated at 2026-06-26 23:38:24 UTC._
 - OS: Alpine Linux / Alpine Linux v3.20
 - Kernel: 6.17.0-35-generic (x86_64)
 - Disk: 6%
-- Memory: 32%
-- Uptime: 5:48
+- Memory: 35%
+- Uptime: 6:50
 
 ### proxy109-demo
 - Status: online
@@ -34,8 +34,8 @@ _Generated at 2026-06-26 23:38:24 UTC._
 - OS: Alpine Linux / Alpine Linux v3.20
 - Kernel: 6.17.0-35-generic (x86_64)
 - Disk: 6%
-- Memory: 32%
-- Uptime: 5:48
+- Memory: 35%
+- Uptime: 6:50
 
 ## Alerts
 - No alerts.
