@@ -15,9 +15,34 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import dotenv_values
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.spinner import Spinner
+from rich.status import Status
+from rich.table import Table
+from rich.text import Text
+from rich.theme import Theme
 
 DEFAULT_MODEL = "gpt-4o"
 DEFAULT_ENV_FILE = ".env"
+
+_THEME = Theme(
+    {
+        "banner.title": "bold cyan",
+        "banner.sub": "dim white",
+        "prompt.label": "bold green",
+        "tool.name": "bold yellow",
+        "tool.args": "dim yellow",
+        "tool.result": "dim cyan",
+        "step.header": "bold blue",
+        "error": "bold red",
+        "info": "dim white",
+    }
+)
+
+console = Console(theme=_THEME, highlight=False)
 
 SYSTEM_PROMPT = (
     "You are MCP Lab Sentinel, a read-only infrastructure diagnostics assistant. "
@@ -48,7 +73,7 @@ def load_openai_config(env_path: str | os.PathLike[str] = DEFAULT_ENV_FILE) -> O
     path = Path(os.path.expanduser(str(env_path)))
     if not path.is_file():
         raise MissingKeyError()
-    values = dotenv_values(path)  # reads the file only, ignores os.environ
+    values = dotenv_values(path)
     api_key = (values.get("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise MissingKeyError()
@@ -58,9 +83,7 @@ def load_openai_config(env_path: str | os.PathLike[str] = DEFAULT_ENV_FILE) -> O
 
 # -- MCP tool bridging ---------------------------------------------------
 
-
 def _mcp_tools_to_openai(tools) -> list[dict]:
-    """Convert MCP tool definitions into OpenAI function-tool specs."""
     specs = []
     for tool in tools:
         specs.append(
@@ -76,7 +99,7 @@ def _mcp_tools_to_openai(tools) -> list[dict]:
     return specs
 
 
-async def _run_query(query: str, config: OpenAIConfig) -> str:
+async def _run_query(query: str, config: OpenAIConfig, verbose: bool = False) -> str:
     """Start the MCP server over stdio and let GPT-4o orchestrate the tools."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
@@ -93,12 +116,20 @@ async def _run_query(query: str, config: OpenAIConfig) -> str:
             tool_list = (await session.list_tools()).tools
             openai_tools = _mcp_tools_to_openai(tool_list)
 
+            if verbose:
+                _print_tools_table(tool_list)
+
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
             ]
 
-            for _ in range(10):  # cap agentic turns
+            for turn in range(10):
+                if verbose:
+                    console.print(
+                        f"\n[step.header]-- Reasoning turn {turn + 1} --[/step.header]"
+                    )
+
                 response = client.chat.completions.create(
                     model=config.model, messages=messages, tools=openai_tools
                 )
@@ -110,10 +141,18 @@ async def _run_query(query: str, config: OpenAIConfig) -> str:
 
                 for call in msg.tool_calls:
                     args = json.loads(call.function.arguments or "{}")
+                    if verbose:
+                        console.print(
+                            f"  [tool.name]calling[/tool.name] {call.function.name}"
+                            f"  [tool.args]{json.dumps(args)}[/tool.args]"
+                        )
                     result = await session.call_tool(call.function.name, args)
                     payload = "\n".join(
                         block.text for block in result.content if hasattr(block, "text")
                     )
+                    if verbose:
+                        preview = payload[:120].replace("\n", " ")
+                        console.print(f"  [tool.result]=> {preview}...[/tool.result]")
                     messages.append(
                         {"role": "tool", "tool_call_id": call.id, "content": payload}
                     )
@@ -121,48 +160,84 @@ async def _run_query(query: str, config: OpenAIConfig) -> str:
             return "Reached the maximum number of reasoning steps without a final answer."
 
 
-_BANNER = """
-╔══════════════════════════════════════════════════════╗
-║           🛰️  MCP Lab Sentinel — Chat Mode           ║
-║  Ask anything about your lab. Type 'exit' to quit.   ║
-╚══════════════════════════════════════════════════════╝
-"""
+def _print_tools_table(tools) -> None:
+    table = Table(title="Available Tools", show_lines=True, border_style="dim cyan")
+    table.add_column("Tool", style="bold yellow", no_wrap=True)
+    table.add_column("Description", style="white")
+    for t in tools:
+        table.add_row(t.name, t.description or "")
+    console.print(table)
 
 
-def _chat_loop(config: OpenAIConfig) -> None:
-    print(_BANNER)
+def _print_banner(model: str) -> None:
+    content = Text.assemble(
+        ("MCP Lab Sentinel\n", "banner.title"),
+        ("Read-only AI diagnostics for your lab infrastructure\n", "banner.sub"),
+        (f"Model: {model}   |   Type 'exit' to quit", "info"),
+    )
+    console.print(Panel(content, border_style="cyan", padding=(0, 2)))
+
+
+def _chat_loop(config: OpenAIConfig, verbose: bool) -> None:
+    _print_banner(config.model)
+    console.print()
+
     while True:
         try:
-            query = input("🔍 You: ").strip()
+            query = console.input("[prompt.label]You:[/prompt.label] ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nBye!")
+            console.print("\n[info]Exiting.[/info]")
             break
         if not query:
             continue
         if query.lower() in {"exit", "quit", "sair"}:
-            print("Bye!")
+            console.print("[info]Exiting.[/info]")
             break
-        print()
-        answer = asyncio.run(_run_query(query, config))
-        print(answer)
-        print()
+
+        console.print()
+        if verbose:
+            answer = asyncio.run(_run_query(query, config, verbose=True))
+            console.print(Rule(style="dim cyan"))
+        else:
+            with Status(
+                "[info]Thinking...[/info]",
+                spinner="dots",
+                spinner_style="cyan",
+                console=console,
+            ):
+                answer = asyncio.run(_run_query(query, config, verbose=False))
+
+        console.print(Markdown(answer))
+        console.print()
 
 
 def main() -> None:
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+    args = [a for a in sys.argv[1:] if a not in ("--verbose", "-v")]
+
     env_file = os.getenv("SENTINEL_ENV_FILE", DEFAULT_ENV_FILE)
     try:
         config = load_openai_config(env_file)
     except MissingKeyError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        console.print(f"[error]Error:[/error] {exc}")
         sys.exit(1)
 
-    if len(sys.argv) > 1:
-        # One-shot mode: pass query directly (useful for scripts/piping)
-        query = " ".join(sys.argv[1:])
-        print(asyncio.run(_run_query(query, config)))
+    if args:
+        query = " ".join(args)
+        if verbose:
+            answer = asyncio.run(_run_query(query, config, verbose=True))
+            console.print(Rule(style="dim cyan"))
+        else:
+            with Status(
+                "[info]Thinking...[/info]",
+                spinner="dots",
+                spinner_style="cyan",
+                console=console,
+            ):
+                answer = asyncio.run(_run_query(query, config, verbose=False))
+        console.print(Markdown(answer))
     else:
-        # Interactive chat mode
-        _chat_loop(config)
+        _chat_loop(config, verbose)
 
 
 if __name__ == "__main__":
